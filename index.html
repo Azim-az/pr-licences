@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR Booking — Licences</title>
+<!--
+  PR BOOKING TOOLS - online licence dashboard
+  Sourcing, Supply Chain - Jinnat Fashion Ltd. (DBL Group)
+
+  A flat file. Put it on GitHub Pages and open it anywhere.
+
+  IT CONTAINS NO SECRETS, ON PURPOSE.
+  The web-app URL and the security key are typed in on first use and kept in
+  that browser's local storage. Someone who finds this page on GitHub has
+  neither, and it shows them nothing.
+
+  It talks to the Apps Script web app attached to Azim's licence Sheet.
+  Content-Type is text/plain deliberately: application/json would make the
+  browser send a CORS preflight, which Apps Script does not answer, and every
+  call would fail before it left the page.
+-->
+<style>
+  :root{
+    --bg:#f4f6fa; --surface:#fff; --line:#e2e6ee; --ink:#161b26;
+    --ink-2:#414b60; --ink-3:#78839a; --accent:#2d4bd8;
+    --ok:#0d7a42; --ok-bg:#dff3e7; --off:#a8241d; --off-bg:#fbe0de;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.06);
+  }
+  :root:not([data-theme="light"]){}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#11151d; --surface:#181e29; --line:#28303f; --ink:#eef1f7;
+      --ink-2:#c2cbdb; --ink-3:#8d99b0; --accent:#7d93ff;
+      --ok:#5fd39a; --ok-bg:#12331f; --off:#ff9b93; --off-bg:#3a1614;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#11151d; --surface:#181e29; --line:#28303f; --ink:#eef1f7;
+    --ink-2:#c2cbdb; --ink-3:#8d99b0; --accent:#7d93ff;
+    --ok:#5fd39a; --ok-bg:#12331f; --off:#ff9b93; --off-bg:#3a1614;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:20px 16px 64px}
+
+  header.bar{
+    background:linear-gradient(100deg,#161b26,#232c3d);
+    color:#fff;padding:13px 18px;display:flex;align-items:center;gap:13px;
+    position:sticky;top:0;z-index:20;
+  }
+  .mark{
+    width:32px;height:32px;border-radius:9px;display:grid;place-items:center;
+    background:linear-gradient(145deg,var(--accent),#6f86f5);
+    font-weight:700;font-size:12px;letter-spacing:.04em;
+  }
+  .bar b{font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .bar span{display:block;font-size:11px;color:#9fb0cf}
+  .grow{flex:1}
+  .who{font-size:12px;color:#c9d5ea}
+
+  .cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:18px 0}
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;box-shadow:var(--shadow);
+  }
+  .card i{
+    display:block;font-style:normal;font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:5px;
+  }
+  .card b{font-size:26px;font-weight:650;letter-spacing:-.02em}
+
+  .panel{
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);overflow:hidden;margin-bottom:18px;
+  }
+  .panel > h2{
+    margin:0;padding:14px 18px;border-bottom:1px solid var(--line);
+    font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px;
+  }
+  .panel .in{padding:16px 18px}
+
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:840px;font-size:13px}
+  th{
+    text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;padding:10px 12px;
+    border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  .k{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12.5px;white-space:nowrap}
+  .muted{color:var(--ink-3)}
+  .pill{
+    display:inline-block;padding:3px 10px;border-radius:999px;
+    font-size:11px;font-weight:600;letter-spacing:.02em;
+  }
+  .pill.on{background:var(--ok-bg);color:var(--ok)}
+  .pill.off{background:var(--off-bg);color:var(--off)}
+  .pill.free{background:var(--line);color:var(--ink-3)}
+
+  button{
+    font:inherit;font-size:13px;cursor:pointer;border-radius:9px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    padding:8px 13px;transition:.14s;
+  }
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button:disabled{opacity:.5;cursor:default}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.08);color:#fff}
+  button.danger:hover{border-color:var(--off);color:var(--off)}
+  button.sm{padding:5px 10px;font-size:12px;border-radius:7px}
+
+  input{
+    font:inherit;font-size:13.5px;padding:9px 11px;border-radius:9px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    width:100%;
+  }
+  input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+  label{display:block;font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+        color:var(--ink-3);font-weight:600;margin:0 0 6px}
+  .field{margin-bottom:13px}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+
+  .note{padding:10px 13px;border-radius:9px;font-size:13px;margin-top:12px}
+  .note.ok{background:var(--ok-bg);color:var(--ok)}
+  .note.bad{background:var(--off-bg);color:var(--off)}
+  .hint{font-size:12px;color:var(--ink-3);margin:9px 0 0;line-height:1.6}
+
+  /* the sign-in cover */
+  .cover{
+    position:fixed;inset:0;z-index:80;display:none;align-items:center;
+    justify-content:center;padding:20px;
+    background:linear-gradient(160deg,#12161d,#1b2331 55%,#232c3d);
+  }
+  .cover.on{display:flex}
+  .cover .box{
+    background:var(--surface);border-radius:16px;padding:26px;
+    width:min(420px,100%);box-shadow:0 24px 70px rgba(0,0,0,.45);
+  }
+  .cover h1{margin:0 0 5px;font-size:19px;font-weight:650;letter-spacing:-.01em}
+  .cover p.sub{margin:0 0 18px;font-size:13px;color:var(--ink-3);line-height:1.6}
+
+  footer{
+    text-align:center;font-size:11.5px;color:var(--ink-3);padding:24px 12px 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================ sign in ============================= -->
+<div class="cover on" id="cover">
+  <div class="box">
+    <div class="mark" style="margin-bottom:14px">PR</div>
+    <h1 id="coverTitle">Licence dashboard</h1>
+    <p class="sub" id="coverSub">
+      Sign in once. This browser remembers it; nothing is stored on the page
+      itself.
+    </p>
+
+    <div class="field">
+      <label>Your name</label>
+      <input id="inName" placeholder="Azim" autocomplete="off">
+    </div>
+    <div class="field" id="fieldUrl">
+      <label>Web app address</label>
+      <input id="inUrl" placeholder="https://script.google.com/macros/s/…/exec"
+             autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>Security key</label>
+      <input id="inPin" type="password" placeholder="••••••••••"
+             autocomplete="off" onkeydown="if(event.key==='Enter')signIn()">
+    </div>
+    <button class="primary" id="btnIn" onclick="signIn()"
+            style="width:100%">Open the dashboard</button>
+    <div id="coverMsg"></div>
+    <p class="hint">
+      The address and the key are kept in this browser only. Change the key any
+      time in the licence Sheet, <b>Settings&nbsp;!&nbsp;B3</b>.
+    </p>
+  </div>
+</div>
+
+<!-- ============================ the app ============================= -->
+<header class="bar">
+  <div class="mark">PR</div>
+  <div>
+    <b>Licences</b>
+    <span>PR Booking Tools &middot; Sourcing &middot; Jinnat Fashion Ltd.</span>
+  </div>
+  <span class="grow"></span>
+  <span class="who" id="who"></span>
+  <button class="sm" onclick="signOut()"
+          style="background:transparent;color:#c9d5ea;border-color:#3a4459">
+    Sign out</button>
+</header>
+
+<div class="wrap">
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>
+      Master switch
+      <span class="grow"></span>
+      <span id="masterPill"></span>
+    </h2>
+    <div class="in">
+      <p class="hint" style="margin:0 0 12px">
+        Stops <b>every</b> laptop at its next live run, including yours. Dry
+        runs keep working. Reversible at any time.
+      </p>
+      <div class="row">
+        <button class="danger" onclick="setMaster('off')">Switch everything off</button>
+        <button onclick="setMaster('on')">Switch everything on</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>
+      Licence keys
+      <span class="grow"></span>
+      <button class="sm" onclick="refresh()">Refresh</button>
+      <button class="sm" onclick="makeKeys()">Make keys</button>
+    </h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th><th>Status</th><th>Issued to</th>
+            <th>PC</th><th>Activated</th><th>Last seen</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="7" class="muted" style="padding:24px 12px">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="in" style="padding-top:0"><div id="msg"></div></div>
+  </div>
+
+  <footer>
+    Developed by Azim &middot; Sourcing, Supply Chain Department &middot; 2026
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[<>&"]/g,c=>
+  ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+/* Kept in THIS browser only. The published page holds no secrets. */
+const SAVE = 'pr_licence_admin_v1';
+let cfg = { url:'', pin:'', name:'' };
+let data = { rows:[], master:'on' };
+
+function load(){
+  try{ cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(SAVE)||'{}')); }
+  catch(e){ /* private window, cleared storage - just ask again */ }
+}
+function store(){
+  try{ localStorage.setItem(SAVE, JSON.stringify(cfg)); }catch(e){}
+}
+
+/* ONE call shape for everything.
+   text/plain is deliberate: with application/json the browser sends a CORS
+   preflight, Apps Script does not answer it, and the request never arrives. */
+async function call(action, extra){
+  busy(true);
+  try{ return await callOnce(action, extra); }
+  finally{ busy(false); }
+}
+
+async function callOnce(action, extra){
+  const body = Object.assign({action, pin:cfg.pin}, extra||{});
+
+  // CACHE-BUST EVERY CALL.
+  //
+  // Apps Script answers a POST with a 302 to script.googleusercontent.com,
+  // and the browser cached THAT. The effect was that every button looked one
+  // step behind: switch a key off and the table still said active; switch it
+  // on and it said revoked. The same calls from Python were always correct,
+  // which is what proved it was the browser and not the server. Found live,
+  // 5 Sep 2026. `no-store` alone is not enough - the redirect target needs a
+  // different URL each time.
+  const url = cfg.url + (cfg.url.indexOf('?') < 0 ? '?' : '&') +
+              't=' + Date.now() + '.' + Math.random().toString(36).slice(2);
+
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(body),
+    redirect:'follow',
+    cache:'no-store'
+  });
+  const text = await res.text();
+  try{ return JSON.parse(text); }
+  catch(e){
+    return { ok:false, message:
+      'The address answered with something that is not a licence server. '+
+      'Check the web app URL ends in /exec.' };
+  }
+}
+
+function note(host, good, text){
+  $(host).innerHTML = '<div class="note '+(good?'ok':'bad')+'">'+esc(text)+'</div>';
+}
+
+/* Google takes two to four SECONDS to answer. Without a visible working state
+   the page looks dead, and the natural reaction is to press the button again
+   -- which is how a perfectly correct table came to look like it was lagging
+   one step behind. Say what is happening, and stop the second press. */
+let busyCount = 0;
+function busy(on){
+  busyCount = Math.max(0, busyCount + (on ? 1 : -1));
+  const working = busyCount > 0;
+  document.querySelectorAll('button').forEach(b => {
+    if(b.id === 'btnIn') return;              // the cover has its own
+    b.disabled = working;
+  });
+  if(working) note('msg', true, 'Working — Google takes a few seconds…');
+}
+
+/* -------------------------------------------------------------- sign in */
+async function signIn(){
+  const name = $('inName').value.trim();
+  const url  = $('inUrl').value.trim();
+  const pin  = $('inPin').value.trim();
+
+  if(!name){ note('coverMsg', false, 'Put your name in.'); return; }
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/]{20,}\/exec$/.test(url)){
+    note('coverMsg', false,
+      'That is not a web app address. It looks like '+
+      'https://script.google.com/macros/s/AKfy…long…/exec — copy it from '+
+      'Apps Script, Deploy, Manage deployments.');
+    return;
+  }
+  if(!pin){ note('coverMsg', false, 'Put the security key in.'); return; }
+
+  const btn = $('btnIn');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  cfg = { url, pin, name };
+
+  const d = await call('admin_list');
+  btn.disabled = false; btn.textContent = 'Open the dashboard';
+
+  if(!d.ok){ note('coverMsg', false, d.message || 'That did not work.'); return; }
+
+  store();
+  await call('admin_name', {admin:name});
+  $('cover').classList.remove('on');
+  paint(d);
+}
+
+function signOut(){
+  if(!confirm('Sign out of this browser?\n\nYou will need the address and the '+
+              'security key again.')) return;
+  try{ localStorage.removeItem(SAVE); }catch(e){}
+  location.reload();
+}
+
+/* --------------------------------------------------------------- paint */
+function paint(d){
+  data = d;
+  $('who').textContent = cfg.name ? ('Signed in as ' + cfg.name) : '';
+
+  const rows = d.rows || [];
+  const inUse   = rows.filter(r => r.machine).length;
+  const active  = rows.filter(r => (r.status||'active') === 'active').length;
+  const off     = rows.filter(r => (r.status||'') === 'revoked').length;
+
+  $('cards').innerHTML =
+    card('Keys made', rows.length) +
+    card('Active', active) +
+    card('Switched off', off) +
+    card('In use on a PC', inUse) +
+    card('Not handed out', rows.length - inUse);
+
+  const master = (d.master || 'on').toLowerCase();
+  $('masterPill').innerHTML = master === 'off'
+    ? '<span class="pill off">EVERYTHING OFF</span>'
+    : '<span class="pill on">Running normally</span>';
+
+  if(!rows.length){
+    $('rows').innerHTML = '<tr><td colspan="7" class="muted" '+
+      'style="padding:24px 12px">No keys yet. Press "Make keys".</td></tr>';
+    return;
+  }
+
+  $('rows').innerHTML = rows.map(r => {
+    const on = (r.status || 'active') === 'active';
+    const used = !!r.machine;
+    return '<tr>'+
+      '<td class="k">'+esc(r.key)+'</td>'+
+      '<td><span class="pill '+(on?'on':'off')+'">'+
+        (on?'active':'switched off')+'</span></td>'+
+      '<td>'+(r.issued
+        ? esc(r.issued)
+        : '<span class="muted">—</span>')+
+        ' <button class="sm" onclick="setIssued(\''+esc(r.key)+'\')" '+
+        'style="border:0;background:transparent;padding:2px 4px" '+
+        'title="Write who this key went to">edit</button></td>'+
+      '<td>'+(used
+        ? esc(r.pc)
+        : '<span class="pill free">not used yet</span>')+'</td>'+
+      '<td class="muted">'+esc(r.activated || '—')+'</td>'+
+      '<td class="muted">'+esc(r.seen || '—')+'</td>'+
+      '<td style="white-space:nowrap">'+
+        (on
+          ? '<button class="sm danger" onclick="setStatus(\''+esc(r.key)+'\',\'revoked\')">Switch off</button>'
+          : '<button class="sm" onclick="setStatus(\''+esc(r.key)+'\',\'active\')">Switch on</button>')+
+        (used
+          ? ' <button class="sm" onclick="release(\''+esc(r.key)+'\')" '+
+            'title="Unbind so it can be used on a different laptop">New PC</button>'
+          : '')+
+      '</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function card(label, n){
+  return '<div class="card"><i>'+esc(label)+'</i><b>'+n+'</b></div>';
+}
+
+/* ------------------------------------------------------------- actions */
+async function refresh(){
+  const d = await call('admin_list');
+  if(!d.ok){ note('msg', false, d.message); return; }
+  $('msg').innerHTML = '';
+  paint(d);
+}
+
+async function setStatus(key, to){
+  if(to === 'revoked'){
+    const why = prompt('Switch off ' + key + '?\n\n' +
+      'That laptop stops at its next LIVE run. Dry runs keep working.\n\n' +
+      'Message to show them (optional):',
+      'Licence ended — call Azim 01794823274');
+    if(why === null) return;
+    await after(await call('admin_status',
+                           {key, status:'revoked', message:why}));
+    return;
+  }
+  await after(await call('admin_status', {key, status:'active', message:''}));
+}
+
+async function setIssued(key){
+  const row = (data.rows||[]).find(r => r.key === key) || {};
+  const who = prompt('Who has ' + key + '?', row.issued || '');
+  if(who === null) return;
+  await after(await call('admin_issued', {key, issued:who}));
+}
+
+async function release(key){
+  if(!confirm('Unbind ' + key + '?\n\nIt can then be activated on a different '+
+              'laptop. The current PC will be asked for a key again.')) return;
+  await after(await call('admin_release', {key}));
+}
+
+async function makeKeys(){
+  const n = prompt('How many new keys?', '10');
+  if(n === null) return;
+  await after(await call('admin_make', {count: parseInt(n,10)}));
+}
+
+async function setMaster(to){
+  if(to === 'off' && !confirm('Switch EVERY copy off?\n\nEvery laptop stops at '+
+     'its next live run, including yours.')) return;
+  await after(await call('admin_master', {value: to}));
+}
+
+async function after(d){
+  if(!d.ok){ note('msg', false, d.message || 'That did not work.'); return; }
+  note('msg', true, d.message || 'Done.');
+  const fresh = await call('admin_list');
+  if(fresh.ok) paint(fresh);
+}
+
+/* ---------------------------------------------------------------- boot */
+load();
+if(cfg.url && cfg.pin){
+  $('inName').value = cfg.name || '';
+  $('inUrl').value  = cfg.url;
+  call('admin_list').then(d => {
+    if(d.ok){ $('cover').classList.remove('on'); paint(d); }
+    else{
+      // Key changed in the Sheet, or the deployment moved. Ask again rather
+      // than showing a broken page.
+      $('inPin').value = '';
+      note('coverMsg', false, d.message || 'Sign in again.');
+    }
+  });
+}else{
+  $('inName').focus();
+}
+</script>
+</body>
+</html>
