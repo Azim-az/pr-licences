@@ -116,6 +116,34 @@
   button.danger:hover{border-color:var(--off);color:var(--off)}
   button.sm{padding:5px 10px;font-size:12px;border-radius:7px}
 
+  /* ---- releases ---- */
+  .relbox{border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .relpick{
+    display:block;border:1.5px dashed var(--line);border-radius:10px;
+    padding:16px;text-align:center;cursor:pointer;transition:.14s;
+  }
+  .relpick:hover{border-color:var(--accent);color:var(--accent)}
+  .relpick b{display:block;font-size:13.5px;margin-bottom:3px}
+  .relpick span{font-size:12px}
+  .relgrid{display:grid;gap:12px;margin-top:14px;
+           grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .relgrid label{display:block;font-size:12px;color:var(--ink-2)}
+  .relgrid input{width:100%;margin-top:5px}
+  /* A tick is not decoration: publishing the wrong zip reaches forty PCs,
+     so each check states what it actually looked at. */
+  .chk{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;
+       margin-top:9px;line-height:1.45}
+  .chk i{font-style:normal;font-weight:700;flex:none;width:15px}
+  .chk.y i{color:var(--ok)}
+  .chk.n i{color:var(--off)}
+  .chk.n{color:var(--off)}
+  .relfile{display:flex;gap:12px;align-items:baseline;font-size:12.5px;
+           padding:7px 0;border-bottom:1px solid var(--line)}
+  .relfile:last-child{border-bottom:0}
+  .relfile b{font-family:ui-monospace,Consolas,monospace;font-size:12px;
+             font-weight:500}
+  .relfile.live b{color:var(--ok);font-weight:700}
+
   input{
     font:inherit;font-size:13.5px;padding:9px 11px;border-radius:9px;
     border:1px solid var(--line);background:var(--surface);color:var(--ink);
@@ -159,8 +187,8 @@
     <div class="mark" style="margin-bottom:14px">PR</div>
     <h1 id="coverTitle">Licence dashboard</h1>
     <p class="sub" id="coverSub">
-      Sign in once. This browser remembers it; nothing is stored on the page
-      itself.
+      The address is already filled in. Type the security key &mdash; that is
+      the only secret, and it is never stored on the page.
     </p>
 
     <div class="field">
@@ -181,8 +209,10 @@
             style="width:100%">Open the dashboard</button>
     <div id="coverMsg"></div>
     <p class="hint">
-      The address and the key are kept in this browser only. Change the key any
-      time in the licence Sheet, <b>Settings&nbsp;!&nbsp;B3</b>.
+      The web app address is built into this page, so it never has to be
+      pasted again. The <b>security key is not</b> &mdash; this page is public,
+      so the key is only ever kept in your own browser. Change it any time in
+      the licence Sheet, <b>Settings&nbsp;!&nbsp;B3</b>.
     </p>
   </div>
 </div>
@@ -223,6 +253,55 @@
     </div>
   </div>
 
+  <!-- ============================ RELEASES ============================
+       Publishing is TWO acts and the order matters: the zip goes into
+       Drive first, then the version is named. A version nobody can
+       download is worse than no version at all - forty PCs would each
+       try, fail, and say so. admin_publish enforces that order; this
+       panel just drives it. -->
+  <div class="panel">
+    <h2>
+      Updates
+      <span class="grow"></span>
+      <span id="livePill"></span>
+    </h2>
+    <div class="in">
+      <div id="liveNow" class="muted" style="margin-bottom:14px">Loading…</div>
+
+      <div class="relbox">
+        <label class="relpick" for="relZip">
+          <b>Choose the release zip</b>
+          <span class="muted" id="relName">
+            build it first with: python build_release.py 2.0.1</span>
+          <input type="file" id="relZip" accept=".zip"
+                 onchange="onZipPicked(this)" hidden>
+        </label>
+        <div id="relChecks"></div>
+
+        <div class="relgrid">
+          <label>Version
+            <input id="relVer" placeholder="2.0.1" autocomplete="off"></label>
+          <label>What changed <span class="muted">(your users read this)</span>
+            <input id="relNotes" placeholder="Faster piece-name filling on new BOMs"
+                   autocomplete="off"></label>
+          <label>Minimum version <span class="muted">(optional)</span>
+            <input id="relMin" placeholder="leave empty" autocomplete="off"></label>
+        </div>
+
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="relGo" onclick="publishRelease()" disabled>
+            Publish</button>
+          <button class="danger" onclick="withdrawRelease()">Withdraw current</button>
+          <span class="grow"></span>
+          <button class="sm" onclick="loadReleases()">Refresh</button>
+        </div>
+        <div id="relMsg"></div>
+      </div>
+
+      <div id="relFiles" style="margin-top:16px"></div>
+    </div>
+  </div>
+
   <div class="panel">
     <h2>
       Licence keys
@@ -256,14 +335,30 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[<>&"]/g,c=>
   ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
-/* Kept in THIS browser only. The published page holds no secrets. */
+/* THE APPS SCRIPT ADDRESS, so it never has to be pasted again.
+   It is not a secret: the same URL is in config.py on every copy of the bot.
+   The SECURITY KEY is deliberately NOT here -- this page is public, and a PIN
+   in the source would hand every visitor the revoke button and the master
+   switch. That one stays typed. */
+const DEFAULT_URL  = 'https://script.google.com/macros/s/AKfycbyv9ZPb2Yns6fMF1cdrPCWCpRSRTcwTrKlHQPBTuTse7HDwQAsEMd1a40h1qQHSpjwb/exec';
+const DEFAULT_NAME = 'Azim';
+
+/* The key is kept in THIS browser only -- and localStorage is per-origin, so
+   the GitHub Pages copy, a local file:// copy and every other browser each
+   have their own. That is why the address kept coming up blank; now it falls
+   back to DEFAULT_URL instead of nothing. */
 const SAVE = 'pr_licence_admin_v1';
-let cfg = { url:'', pin:'', name:'' };
+let cfg = { url:DEFAULT_URL, pin:'', name:DEFAULT_NAME };
 let data = { rows:[], master:'on' };
 
 function load(){
   try{ cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(SAVE)||'{}')); }
   catch(e){ /* private window, cleared storage - just ask again */ }
+  // A stored EMPTY address must not beat the built-in one. An older save
+  // wrote {url:'',pin:'',name:''} on sign-out, and Object.assign would
+  // happily copy those blanks straight over the defaults.
+  if(!cfg.url)  cfg.url  = DEFAULT_URL;
+  if(!cfg.name) cfg.name = DEFAULT_NAME;
 }
 function store(){
   try{ localStorage.setItem(SAVE, JSON.stringify(cfg)); }catch(e){}
@@ -357,11 +452,14 @@ async function signIn(){
   await call('admin_name', {admin:name});
   $('cover').classList.remove('on');
   paint(d);
+  loadReleases();
 }
 
 function signOut(){
-  if(!confirm('Sign out of this browser?\n\nYou will need the address and the '+
-              'security key again.')) return;
+  // Only the SECURITY KEY is forgotten. The address is not a secret and
+  // having to paste it again was the whole complaint.
+  if(!confirm('Sign out of this browser?\n\nYou will need the security key '+
+              'again. The address stays filled in.')) return;
   try{ localStorage.removeItem(SAVE); }catch(e){}
   location.reload();
 }
@@ -483,13 +581,244 @@ async function after(d){
   if(fresh.ok) paint(fresh);
 }
 
+/* ======================================================== RELEASES =====
+
+   Publishing an update from a phone or any browser. The zip is built on
+   Azim's PC (python build_release.py 2.0.1) and this sends it to Drive
+   through the same Apps Script the bots ask, so the releases folder never
+   has to be shared with anybody.
+
+   THE CHECKS BELOW ARE A SECOND PAIR OF EYES, not the only ones.
+   build_release.py already refuses to produce a bad zip and updater.py
+   refuses to install one. This catches the day something else is picked by
+   mistake - the wrong file, an old zip, somebody's backup - before it
+   reaches forty PCs. */
+
+let relZipData = null;     // {name, bytes, b64, entries}
+
+/* Read a zip's CENTRAL DIRECTORY - the real file list, not a guess.
+
+   No library: the entries are plain records at the end of the file, and a
+   flat page that needs no CDN is worth a few lines of parsing. Each record
+   starts PK\x01\x02 (0x02014b50 little-endian), with the name length at
+   offset 28 and the name itself at 46. Returns null if it is not a zip. */
+function zipEntries(buf){
+  try{
+    const bytes = new Uint8Array(buf), dv = new DataView(buf);
+    let eocd = -1;
+    const floor = Math.max(0, bytes.length - 66000);
+    for(let i = bytes.length - 22; i >= floor; i--){
+      if(bytes[i]===0x50 && bytes[i+1]===0x4b &&
+         bytes[i+2]===0x05 && bytes[i+3]===0x06){ eocd = i; break; }
+    }
+    if(eocd < 0) return null;
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    const dec = new TextDecoder(), names = [];
+    for(let n = 0; n < count; n++){
+      if(dv.getUint32(off, true) !== 0x02014b50) return null;
+      const nameLen  = dv.getUint16(off + 28, true);
+      const extraLen = dv.getUint16(off + 30, true);
+      const cmtLen   = dv.getUint16(off + 32, true);
+      names.push(dec.decode(bytes.subarray(off + 46, off + 46 + nameLen)));
+      off += 46 + nameLen + extraLen + cmtLen;
+    }
+    return names;
+  }catch(e){ return null; }
+}
+
+/* Bytes to base64 IN CHUNKS. String.fromCharCode(...bytes) on a 3 MB array
+   overflows the argument stack and throws, which looks exactly like a
+   corrupt file. */
+function toBase64(buf){
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for(let i = 0; i < bytes.length; i += 0x8000){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+}
+
+const MUST_HAVE = ['app.py','oracle_bot.py','requisition.py','orchestrator.py',
+                   'config.py','licence.py','static/index.html','VERSION',
+                   'manifest.json','Start PR Bot.bat','Setup.bat'];
+const MUST_NOT  = ['make_key.py','APPS_SCRIPT.gs','build_release.py'];
+
+function chk(ok, text){
+  return '<div class="chk '+(ok?'y':'n')+'"><i>'+(ok?'✓':'✕')+'</i>'+
+         '<span>'+esc(text)+'</span></div>';
+}
+
+function onZipPicked(input){
+  const file = input.files && input.files[0];
+  relZipData = null;
+  $('relGo').disabled = true;
+  $('relChecks').innerHTML = '';
+  if(!file){ $('relName').textContent = 'no file chosen'; return; }
+
+  $('relName').textContent = file.name + '  ·  reading…';
+  const fr = new FileReader();
+  fr.onerror = () => {
+    $('relName').textContent = file.name;
+    $('relChecks').innerHTML = chk(false, 'That file could not be read.');
+  };
+  fr.onload = () => {
+    const buf = fr.result;
+    const entries = zipEntries(buf);
+    const mb = (file.size/1048576).toFixed(2);
+    $('relName').textContent = file.name + '  ·  ' + mb + ' MB';
+
+    if(!entries){
+      $('relChecks').innerHTML =
+        chk(false, 'That is not a zip file, or it did not copy completely.');
+      return;
+    }
+
+    const set = new Set(entries);
+    const missing = MUST_HAVE.filter(n => !set.has(n));
+    const admin   = MUST_NOT.filter(n => set.has(n));
+    const personal = entries.filter(n => n === 'data' || n.startsWith('data/'));
+    const dash     = entries.filter(n => n.startsWith('licence-dashboard/'));
+    const manifests = entries.filter(n => n === 'manifest.json').length;
+
+    let html = '';
+    html += chk(!missing.length, missing.length
+      ? 'Not a PR Booking release — missing ' + missing.slice(0,3).join(', ')
+      : 'Looks like a PR Booking release (' + entries.length + ' files)');
+    html += chk(!admin.length, admin.length
+      ? 'Contains admin files that must never be sent out: ' + admin.join(', ')
+      : 'No admin files — make_key.py and APPS_SCRIPT.gs are not in it');
+    html += chk(!personal.length && !dash.length,
+      (personal.length || dash.length)
+        ? 'Contains ' + (personal[0] || dash[0]) + ', which must not be shipped'
+        : 'No personal data — nothing under data/');
+    html += chk(manifests === 1, manifests === 1
+      ? 'One manifest, so every file can be checked on arrival'
+      : 'It has ' + manifests + ' manifest.json entries, expected exactly 1');
+
+    const ok = !missing.length && !admin.length && !personal.length
+               && !dash.length && manifests === 1;
+    $('relChecks').innerHTML = html;
+    if(!ok) return;
+
+    // The version comes from the FILENAME. Reading VERSION inside would mean
+    // decompressing, and the number is checked twice more anyway: the server
+    // refuses to publish unless a file of that name is in the folder, and
+    // every bot compares the zip's own VERSION before installing it.
+    const m = /PR_Booking_([0-9][0-9A-Za-z.\-+]*)\.zip$/i.exec(file.name);
+    if(m && !$('relVer').value.trim()) $('relVer').value = m[1];
+
+    relZipData = {name:file.name, bytes:file.size, b64:toBase64(buf)};
+    $('relGo').disabled = false;
+  };
+  fr.readAsArrayBuffer(file);
+}
+
+async function publishRelease(){
+  const version = $('relVer').value.trim();
+  const notes   = $('relNotes').value.trim();
+  const minVer  = $('relMin').value.trim();
+  if(!/^[0-9]+\.[0-9]+\.[0-9]+([.\-+][0-9A-Za-z.\-+]{1,16})?$/.test(version)){
+    note('relMsg', false, 'That is not a version. Use three numbers, like 2.0.1.');
+    return;
+  }
+  if(!relZipData){
+    note('relMsg', false, 'Choose the release zip first.');
+    return;
+  }
+  const expect = 'PR_Booking_' + version + '.zip';
+  if(relZipData.name !== expect &&
+     !confirm('The file is named ' + relZipData.name + ' but you are '+
+              'publishing ' + version + '.\n\nIt will be stored as ' + expect +
+              '.\n\nCarry on?')) return;
+
+  if(!confirm('Publish ' + version + ' to every PC?\n\n' +
+              'They pick it up on their next check (at most twice a day) and '+
+              'apply it the next time they start.\n\n' +
+              'You can withdraw it again at any time.')) return;
+
+  note('relMsg', true, 'Uploading ' + (relZipData.bytes/1048576).toFixed(2) +
+                       ' MB… this takes up to a minute.');
+  const d = await call('admin_publish',
+                       {version, notes, minVersion:minVer, data:relZipData.b64});
+  if(!d.ok){ note('relMsg', false, d.message || 'That did not work.'); return; }
+  note('relMsg', true, d.message || 'Published.');
+  relZipData = null;
+  $('relGo').disabled = true;
+  $('relZip').value = '';
+  $('relName').textContent = 'build it first with: python build_release.py 2.0.1';
+  $('relChecks').innerHTML = '';
+  loadReleases();
+}
+
+async function withdrawRelease(){
+  if(!confirm('Withdraw the published version?\n\n' +
+              'Any PC that has not taken it never will. Anyone who already '+
+              'has it keeps working, and can go back with Update PR Bot.bat.'))
+    return;
+  await paintReleases(await call('admin_unpublish'), true);
+  loadReleases();
+}
+
+async function loadReleases(){
+  await paintReleases(await call('admin_releases'), false);
+}
+
+async function paintReleases(d, quiet){
+  if(!d || !d.ok){
+    if(!quiet) note('relMsg', false, (d && d.message) || 'Could not read releases.');
+    return;
+  }
+  if(quiet && d.message) note('relMsg', true, d.message);
+  if(quiet) return;
+
+  const live = (d.live || '').trim();
+  $('livePill').innerHTML = live
+    ? '<span class="pill on">'+esc(live)+' is live</span>'
+    : '<span class="pill free">nothing published</span>';
+
+  $('liveNow').innerHTML = live
+    ? '<b>Version '+esc(live)+'</b> is what every PC will install.'+
+      (d.published ? ' <span class="muted">Published '+esc(d.published)+'.</span>' : '')+
+      (d.notes ? '<br><span class="muted">“'+esc(d.notes)+'”</span>' : '')
+    : 'Nothing is published, so <b>no PC will change anything</b>. '+
+      'Upload a zip below and press Publish when you are ready.';
+
+  const files = d.files || [];
+  $('relFiles').innerHTML = files.length
+    ? '<div class="muted" style="font-size:11px;letter-spacing:.08em;'+
+      'text-transform:uppercase;margin-bottom:6px">In the releases folder</div>'+
+      files.map(f => {
+        const isLive = live && f.name === 'PR_Booking_'+live+'.zip';
+        return '<div class="relfile'+(isLive?' live':'')+'">'+
+          '<b>'+esc(f.name)+'</b>'+
+          '<span class="muted">'+(f.bytes/1048576).toFixed(2)+' MB</span>'+
+          '<span class="muted">'+esc(f.when||'')+'</span>'+
+          (isLive?'<span class="pill on">live</span>':'')+
+        '</div>';
+      }).join('')
+    : '<div class="muted" style="font-size:12.5px">The releases folder is '+
+      'empty.</div>';
+}
+
 /* ---------------------------------------------------------------- boot */
 load();
+
+// ALWAYS fill the address in, signed in or not. This is the fix for having
+// to paste it at every login.
+$('inUrl').value  = cfg.url;
+$('inName').value = cfg.name || '';
+
 if(cfg.url && cfg.pin){
-  $('inName').value = cfg.name || '';
-  $('inUrl').value  = cfg.url;
   call('admin_list').then(d => {
-    if(d.ok){ $('cover').classList.remove('on'); paint(d); }
+    if(d.ok){
+      $('cover').classList.remove('on');
+      paint(d);
+      // AFTER the keys, not instead of them. The licence table is what this
+      // page is for; releases load behind it, and a Sheet with no Release
+      // tab yet simply paints "nothing published".
+      loadReleases();
+    }
     else{
       // Key changed in the Sheet, or the deployment moved. Ask again rather
       // than showing a broken page.
