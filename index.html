@@ -177,6 +177,53 @@
   footer{
     text-align:center;font-size:11.5px;color:var(--ink-3);padding:24px 12px 0;
   }
+
+  /* ---- the dynamic dashboard (28 Oct 2026) ---- */
+  .charts{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .chart h3{margin:0 0 10px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+            color:var(--ink-3);font-weight:600}
+  .bar-row{display:grid;grid-template-columns:110px 1fr 34px;gap:8px;align-items:center;
+           font-size:12.5px;padding:3px 4px;border-radius:7px;cursor:pointer}
+  .bar-row:hover{background:var(--bg)}
+  .bar-row .track{height:9px;background:var(--line);border-radius:6px;overflow:hidden}
+  .bar-row .fill{height:100%;border-radius:6px;background:var(--accent)}
+  .bar-row b{text-align:right;font-weight:600}
+  .months{display:flex;gap:8px;align-items:flex-end;height:96px;padding-top:6px}
+  .months div{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;
+              font-size:11px;color:var(--ink-3)}
+  .months i{display:block;width:100%;max-width:34px;border-radius:5px 5px 0 0;
+            background:linear-gradient(180deg,#6f86f5,var(--accent));min-height:2px}
+  .months b{font-size:11.5px;color:var(--ink);font-weight:600}
+
+  .tools{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:12px 18px;
+         border-bottom:1px solid var(--line)}
+  .tools input[type=search]{width:240px;flex:0 1 240px}
+  .tools select, .tools input[type=date]{
+    font:inherit;font-size:13px;padding:7px 9px;border-radius:9px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink);width:auto}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:10px 18px;border-bottom:1px solid var(--line)}
+  .chip{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);
+        background:var(--surface);color:var(--ink-2);cursor:pointer}
+  .chip b{font-weight:700;margin-left:4px;color:var(--ink-3)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip.on b{color:#dfe5ff}
+  th.sort{cursor:pointer;user-select:none}
+  th.sort:hover{color:var(--accent)}
+  th.sort.asc::after{content:" \2191";color:var(--accent)}
+  th.sort.desc::after{content:" \2193";color:var(--accent)}
+  td.ck, th.ck{width:30px;padding-right:0}
+  .shown{font-size:12px;color:var(--ink-3)}
+
+  textarea{font:inherit;font-size:13.5px;padding:9px 11px;border-radius:9px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    width:100%;min-height:84px;resize:vertical}
+  .msggrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .to-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13px}
+  .to-row label{display:inline-flex;gap:6px;align-items:center;margin:0;
+                text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:400}
+  .to-row input[type=radio], .to-row input[type=checkbox]{width:auto}
+  .pill.imp{background:#fff1d6;color:#9a5b00}
+  .pill.info{background:#e3e8ff;color:#2d4bd8}
 </style>
 </head>
 <body>
@@ -234,6 +281,13 @@
 <div class="wrap">
 
   <div class="cards" id="cards"></div>
+
+  <!-- OVERVIEW CHARTS. Click any bar to filter the key list to it. -->
+  <div class="panel">
+    <h2>Overview <span class="grow"></span>
+      <span class="shown">click a bar to filter the list</span></h2>
+    <div class="in"><div class="charts" id="charts"></div></div>
+  </div>
 
   <div class="panel">
     <h2>
@@ -308,21 +362,89 @@
       <span class="grow"></span>
       <button class="sm" onclick="refresh()">Refresh</button>
       <button class="sm" onclick="makeKeys()">Make keys</button>
+      <button class="sm" onclick="setValidAll()" title="Give every ACTIVE key the same end date">Date for all</button>
+      <button class="sm" onclick="exportCsv()" title="Download the list as it is filtered now">Export CSV</button>
     </h2>
+    <div class="tools">
+      <input type="search" id="q" placeholder="Search key, name, PC…" oninput="view.q=this.value;renderTable()">
+      <select id="dField" onchange="view.dField=this.value;renderTable()" title="Which date the range applies to">
+        <option value="seen">Last seen</option>
+        <option value="activated">Activated</option>
+        <option value="validUntil">Valid until</option>
+      </select>
+      <input type="date" id="dFrom" onchange="view.from=this.value;renderTable()" title="From">
+      <input type="date" id="dTo" onchange="view.to=this.value;renderTable()" title="To">
+      <button class="sm" onclick="clearFilters()">Clear filters</button>
+      <span class="grow"></span>
+      <span class="shown" id="shown"></span>
+      <button class="sm primary" id="msgSelBtn" onclick="messageSelected()" hidden>Message selected</button>
+    </div>
+    <div class="chips" id="chips"></div>
     <div class="scroll">
       <table>
         <thead>
           <tr>
-            <th>Key</th><th>Status</th><th>Issued to</th>
-            <th>PC</th><th>Activated</th><th>Last seen</th><th></th>
+            <th class="ck"><input type="checkbox" id="ckAll" title="Select all shown" onclick="selectAllShown(this.checked)"></th>
+            <th class="sort" data-s="key">Key</th><th class="sort" data-s="status">Status</th>
+            <th class="sort" data-s="issued">Issued to</th><th class="sort" data-s="pc">PC</th>
+            <th class="sort" data-s="activated">Activated</th><th class="sort" data-s="seen">Last seen</th>
+            <th class="sort" data-s="validUntil">Valid until</th><th></th>
           </tr>
         </thead>
         <tbody id="rows">
-          <tr><td colspan="7" class="muted" style="padding:24px 12px">Loading…</td></tr>
+          <tr><td colspan="9" class="muted" style="padding:24px 12px">Loading…</td></tr>
         </tbody>
       </table>
     </div>
     <div class="in" style="padding-top:0"><div id="msg"></div></div>
+  </div>
+
+  <!-- MESSAGES (28 Oct 2026). What you write here appears in the bell of the
+       users you choose. "Important" also shows a banner until they close it.
+       Each PC looks for new messages about once an hour. -->
+  <div class="panel" id="msgPanel">
+    <h2>Messages to users <span class="grow"></span>
+      <button class="sm" onclick="loadMessages()">Refresh</button></h2>
+    <div class="in">
+      <div class="to-row" style="margin-bottom:12px">
+        <b style="font-size:12px;color:var(--ink-3)">SEND TO</b>
+        <label><input type="radio" name="mto" value="ALL" checked onchange="paintTo()"> Everyone</label>
+        <label><input type="radio" name="mto" value="SEL" onchange="paintTo()"> <span id="selLabel">Selected users (0)</span></label>
+        <label><input type="radio" name="mto" value="ONE" onchange="paintTo()"> One user</label>
+        <select id="mOne" style="font:inherit;font-size:13px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)" hidden></select>
+      </div>
+      <div class="msggrid">
+        <div class="field"><label>Title</label>
+          <input id="mTitle" maxlength="120" placeholder="e.g. Oracle maintenance tonight"></div>
+        <div class="field"><label>Show until</label>
+          <div class="row" style="flex-wrap:nowrap">
+            <select id="mDays" onchange="$('mUntil').hidden = this.value !== 'date'"
+              style="font:inherit;font-size:13px;padding:8px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">
+              <option value="1">1 day</option><option value="3">3 days</option>
+              <option value="7" selected>7 days</option><option value="14">14 days</option>
+              <option value="30">30 days</option><option value="date">Choose a date…</option>
+            </select>
+            <input type="date" id="mUntil" hidden>
+          </div></div>
+      </div>
+      <div class="field"><label>Message</label>
+        <textarea id="mText" maxlength="2000" placeholder="What should they read?"></textarea></div>
+      <div class="row">
+        <label class="to-row" style="margin:0"><input type="checkbox" id="mImp"> <span>Important &mdash; also show a banner until they close it</span></label>
+        <span class="grow"></span>
+        <button class="primary" onclick="sendMessage()">Send</button>
+      </div>
+      <div id="msgNote"></div>
+      <div class="scroll" style="margin-top:16px">
+        <table style="min-width:680px">
+          <thead><tr><th>Sent</th><th>To</th><th>Message</th><th>Until</th><th>State</th><th></th></tr></thead>
+          <tbody id="msgRows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <p class="hint">Each PC looks for messages about once an hour, and shows them
+        in its notification bell. Users on the current version see them after
+        the next release.</p>
+    </div>
   </div>
 
   <footer>
@@ -453,6 +575,7 @@ async function signIn(){
   $('cover').classList.remove('on');
   paint(d);
   loadReleases();
+  loadMessages();
 }
 
 function signOut(){
@@ -486,23 +609,130 @@ function paint(d){
     ? '<span class="pill off">EVERYTHING OFF</span>'
     : '<span class="pill on">Running normally</span>';
 
-  if(!rows.length){
-    $('rows').innerHTML = '<tr><td colspan="7" class="muted" '+
+  // forget ticks on keys that no longer exist
+  const keys = new Set(rows.map(r => r.key));
+  view.sel.forEach(k => { if(!keys.has(k)) view.sel.delete(k); });
+
+  renderCharts();
+  renderTable();
+  fillOneUser();
+  paintTo();
+}
+
+/* ============================================ the dynamic list (28 Oct)
+   Everything below works on `data.rows` already in the page: search,
+   filters, sorting and charts never call Google, so they are instant and
+   cost nothing. Only the buttons that CHANGE something call the server. */
+const view = { q:'', chip:'all', dField:'seen', from:'', to:'',
+               sort:'key', dir:1, sel:new Set() };
+
+/* '2026-09-05 20:11:18', an ISO string, or the old long Sheets format ->
+   a Date, or null. */
+function dt(s){
+  if(!s) return null;
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0));
+  const t = Date.parse(String(s).replace(/\s*\(.*\)\s*$/, ''));
+  return isNaN(t) ? null : new Date(t);
+}
+function ymd(d){
+  return d ? d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+
+             String(d.getDate()).padStart(2,'0') : '';
+}
+function daysSince(s){
+  const d = dt(s); if(!d) return null;
+  return Math.floor((Date.now() - d.getTime()) / 864e5);
+}
+
+const CHIPS = [
+  ['all',     'All',               r => true],
+  ['active',  'Active',            r => (r.status||'active') === 'active'],
+  ['off',     'Switched off',      r => (r.status||'') === 'revoked'],
+  ['inuse',   'In use',            r => !!r.machine],
+  ['unused',  'Not used yet',      r => !r.machine],
+  ['seen7',   'Used in last 7 days', r => { const n = daysSince(r.seen); return n !== null && n <= 7; }],
+  ['idle30',  'Not seen 30+ days', r => { if(!r.machine) return false;
+                                          const n = daysSince(r.seen); return n === null || n > 30; }],
+  ['ending',  'Ending in 7 days',  r => { const u = r.validUntil; if(!u) return false;
+                                          const t = isoPlus(0), w = isoPlus(7); return u >= t && u <= w; }],
+  ['ended',   'Ended',             r => !!r.validUntil && r.validUntil < isoPlus(0)],
+  ['dated',   'Has an end date',   r => !!r.validUntil],
+];
+
+function passes(r){
+  const chip = CHIPS.find(c => c[0] === view.chip) || CHIPS[0];
+  if(!chip[2](r)) return false;
+  const q = view.q.trim().toLowerCase();
+  if(q && ![r.key, r.issued, r.pc, r.message].some(x => String(x||'').toLowerCase().includes(q))) return false;
+  if(view.from || view.to){
+    const v = view.dField === 'validUntil' ? (r.validUntil||'') : ymd(dt(r[view.dField]));
+    if(!v) return false;
+    if(view.from && v < view.from) return false;
+    if(view.to && v > view.to) return false;
+  }
+  return true;
+}
+
+function sortValue(r, k){
+  if(k === 'activated' || k === 'seen'){ const d = dt(r[k]); return d ? d.getTime() : -1; }
+  if(k === 'status') return (r.status||'active');
+  return String(r[k]||'').toLowerCase();
+}
+
+function shownRows(){
+  const rows = (data.rows||[]).filter(passes);
+  rows.sort((a, b) => {
+    const x = sortValue(a, view.sort), y = sortValue(b, view.sort);
+    return (x < y ? -1 : x > y ? 1 : 0) * view.dir;
+  });
+  return rows;
+}
+
+function renderTable(){
+  const all = data.rows || [];
+  // chips with live counts
+  $('chips').innerHTML = CHIPS.map(c =>
+    '<button class="chip'+(view.chip===c[0]?' on':'')+'" onclick="setChip(\''+c[0]+'\')">'+
+    esc(c[1])+' <b>'+all.filter(c[2]).length+'</b></button>').join('');
+  // header sort marks
+  document.querySelectorAll('th.sort').forEach(th => {
+    th.classList.toggle('asc',  th.dataset.s === view.sort && view.dir === 1);
+    th.classList.toggle('desc', th.dataset.s === view.sort && view.dir === -1);
+    th.onclick = () => { if(view.sort === th.dataset.s) view.dir = -view.dir;
+                         else { view.sort = th.dataset.s; view.dir = 1; } renderTable(); };
+  });
+
+  const rows = shownRows();
+  $('shown').textContent = 'Showing ' + rows.length + ' of ' + all.length +
+    (view.sel.size ? ' · ' + view.sel.size + ' selected' : '');
+  $('msgSelBtn').hidden = !view.sel.size;
+  $('msgSelBtn').textContent = 'Message selected (' + view.sel.size + ')';
+  $('ckAll').checked = rows.length > 0 && rows.every(r => view.sel.has(r.key));
+
+  if(!all.length){
+    $('rows').innerHTML = '<tr><td colspan="9" class="muted" '+
       'style="padding:24px 12px">No keys yet. Press "Make keys".</td></tr>';
     return;
   }
-
+  if(!rows.length){
+    $('rows').innerHTML = '<tr><td colspan="9" class="muted" style="padding:24px 12px">'+
+      'Nothing matches these filters. <a href="#" onclick="clearFilters();return false">Show all</a></td></tr>';
+    return;
+  }
   $('rows').innerHTML = rows.map(r => {
     const on = (r.status || 'active') === 'active';
     const used = !!r.machine;
+    const k = esc(r.key);
     return '<tr>'+
-      '<td class="k">'+esc(r.key)+'</td>'+
+      '<td class="ck"><input type="checkbox" '+(view.sel.has(r.key)?'checked ':'')+
+        'onclick="toggleSel(\''+k+'\',this.checked)"></td>'+
+      '<td class="k">'+k+'</td>'+
       '<td><span class="pill '+(on?'on':'off')+'">'+
         (on?'active':'switched off')+'</span></td>'+
       '<td>'+(r.issued
         ? esc(r.issued)
         : '<span class="muted">—</span>')+
-        ' <button class="sm" onclick="setIssued(\''+esc(r.key)+'\')" '+
+        ' <button class="sm" onclick="setIssued(\''+k+'\')" '+
         'style="border:0;background:transparent;padding:2px 4px" '+
         'title="Write who this key went to">edit</button></td>'+
       '<td>'+(used
@@ -510,17 +740,238 @@ function paint(d){
         : '<span class="pill free">not used yet</span>')+'</td>'+
       '<td class="muted">'+esc(r.activated || '—')+'</td>'+
       '<td class="muted">'+esc(r.seen || '—')+'</td>'+
+      validCell(r)+
       '<td style="white-space:nowrap">'+
         (on
-          ? '<button class="sm danger" onclick="setStatus(\''+esc(r.key)+'\',\'revoked\')">Switch off</button>'
-          : '<button class="sm" onclick="setStatus(\''+esc(r.key)+'\',\'active\')">Switch on</button>')+
+          ? '<button class="sm danger" onclick="setStatus(\''+k+'\',\'revoked\')">Switch off</button>'
+          : '<button class="sm" onclick="setStatus(\''+k+'\',\'active\')">Switch on</button>')+
         (used
-          ? ' <button class="sm" onclick="release(\''+esc(r.key)+'\')" '+
+          ? ' <button class="sm" onclick="release(\''+k+'\')" '+
             'title="Unbind so it can be used on a different laptop">New PC</button>'
           : '')+
       '</td>'+
     '</tr>';
   }).join('');
+}
+
+function setChip(c){ view.chip = c; renderTable(); }
+function clearFilters(){
+  Object.assign(view, {q:'', chip:'all', from:'', to:''});
+  $('q').value = ''; $('dFrom').value = ''; $('dTo').value = '';
+  renderTable();
+}
+function toggleSel(key, on){ on ? view.sel.add(key) : view.sel.delete(key); renderTable(); paintTo(); }
+function selectAllShown(on){
+  shownRows().forEach(r => on ? view.sel.add(r.key) : view.sel.delete(r.key));
+  renderTable(); paintTo();
+}
+
+/* ---- charts: plain HTML bars, no library, nothing loaded from outside */
+function renderCharts(){
+  const rows = data.rows || [];
+  const n = f => rows.filter(f).length;
+  const groups = [
+    ['Status', [['Active','active'], ['Switched off','off']]],
+    ['Usage', [['Last 7 days','seen7'], ['Not seen 30+ days','idle30'], ['Not used yet','unused']]],
+    ['End dates', [['On 45 days', null], ['Has an end date','dated'], ['Ending in 7 days','ending'], ['Ended','ended']]],
+  ];
+  const max = Math.max(1, rows.length);
+  let html = groups.map(([title, items]) =>
+    '<div class="chart"><h3>'+esc(title)+'</h3>'+ items.map(([label, chip]) => {
+      const c = chip ? CHIPS.find(x => x[0] === chip) : null;
+      const v = c ? n(c[2]) : n(r => !r.validUntil);
+      return '<div class="bar-row" onclick="setChip(\''+(chip||'all')+'\')">'+
+        '<span>'+esc(label)+'</span><span class="track"><span class="fill" style="display:block;width:'+
+        Math.round(v / max * 100)+'%"></span></span><b>'+v+'</b></div>';
+    }).join('') + '</div>').join('');
+
+  // activations per month, last 6 months
+  const months = [];
+  const now = new Date();
+  for(let i = 5; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    months.push([key, d.toLocaleString('en', {month:'short'}),
+                 rows.filter(r => ymd(dt(r.activated)).slice(0,7) === key).length]);
+  }
+  const mx = Math.max(1, ...months.map(m => m[2]));
+  html += '<div class="chart"><h3>Activations per month</h3><div class="months">'+
+    months.map(m => '<div><b>'+m[2]+'</b><i style="height:'+Math.round(m[2]/mx*64)+'px"></i>'+esc(m[1])+'</div>').join('')+
+    '</div></div>';
+  $('charts').innerHTML = html;
+}
+
+/* ---- export: exactly the rows shown, Excel-friendly */
+function exportCsv(){
+  const rows = shownRows();
+  const head = ['Key','Status','Issued to','PC','Activated','Last seen','Valid until','Message'];
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [head.map(q).join(',')].concat(rows.map(r =>
+    [r.key, r.status||'active', r.issued, r.pc, r.activated, r.seen, r.validUntil, r.message].map(q).join(',')));
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  const d = new Date();
+  const stampTxt = ymd(d).replace(/-/g,'') + '-' + String(d.getHours()).padStart(2,'0') + String(d.getMinutes()).padStart(2,'0');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'licences_' + stampTxt + '_' + rows.length + '-keys.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ============================================ messages (28 Oct 2026) */
+let msgList = [];
+
+function nameOf(key){
+  const r = (data.rows||[]).find(x => x.key === key);
+  return r && r.issued ? r.issued : key;
+}
+function fillOneUser(){
+  const sel = $('mOne'); if(!sel) return;
+  const was = sel.value;
+  sel.innerHTML = (data.rows||[]).filter(r => (r.status||'active') === 'active')
+    .map(r => '<option value="'+esc(r.key)+'">'+esc((r.issued || 'no name') + ' · ' + r.key)+'</option>').join('');
+  if(was) sel.value = was;
+}
+function mTo(){ const c = document.querySelector('input[name=mto]:checked'); return c ? c.value : 'ALL'; }
+function paintTo(){
+  const lab = $('selLabel'); if(lab) lab.textContent = 'Selected users (' + view.sel.size + ')';
+  if($('mOne')) $('mOne').hidden = mTo() !== 'ONE';
+}
+function messageSelected(){
+  document.querySelector('input[name=mto][value=SEL]').checked = true;
+  paintTo();
+  $('msgPanel').scrollIntoView({behavior:'smooth', block:'start'});
+  setTimeout(() => $('mText').focus(), 400);
+}
+
+async function loadMessages(){
+  const d = await call('admin_msg_list');
+  if(!d.ok){
+    const old = /Unknown action/i.test(d.message || '');
+    $('msgRows').innerHTML = '<tr><td colspan="6" class="muted">'+
+      (old ? 'Messages need the new Apps Script. Paste APPS_SCRIPT.gs and deploy a new version, then Refresh.'
+           : esc(d.message || 'Could not load messages.'))+'</td></tr>';
+    return;
+  }
+  msgList = d.messages || [];
+  paintMessages();
+}
+
+function paintMessages(){
+  const today = isoPlus(0);
+  if(!msgList.length){
+    $('msgRows').innerHTML = '<tr><td colspan="6" class="muted">No messages yet.</td></tr>';
+    return;
+  }
+  const rows = msgList.slice().sort((a, b) => String(b.sent).localeCompare(String(a.sent)));
+  $('msgRows').innerHTML = rows.map(m => {
+    const keys = String(m.to||'ALL') === 'ALL' ? [] : String(m.to).split(',');
+    const to = keys.length ? keys.map(k => esc(nameOf(k.trim()))).join(', ') : '<b>Everyone</b>';
+    const state = m.until && m.until < today ? '<span class="pill off">ended</span>'
+                : m.from && m.from > today ? '<span class="pill free">waiting</span>'
+                : '<span class="pill on">showing</span>';
+    return '<tr>'+
+      '<td class="muted" style="white-space:nowrap">'+esc(String(m.sent||'').slice(0,16))+'</td>'+
+      '<td>'+to+'</td>'+
+      '<td><span class="pill '+(m.level==='important'?'imp':'info')+'">'+(m.level==='important'?'important':'info')+'</span> '+
+        (m.title ? '<b>'+esc(m.title)+'</b> — ' : '')+esc(String(m.text||'').slice(0,140))+
+        (String(m.text||'').length > 140 ? '…' : '')+'</td>'+
+      '<td class="muted" style="white-space:nowrap">'+esc(m.until||'')+'</td>'+
+      '<td>'+state+'</td>'+
+      '<td><button class="sm danger" onclick="deleteMessage(\''+esc(m.id)+'\')">Delete</button></td>'+
+    '</tr>';
+  }).join('');
+}
+
+async function sendMessage(){
+  const text = $('mText').value.trim();
+  if(!text){ note('msgNote', false, 'Write the message first.'); return; }
+  let to = 'ALL';
+  const mode = mTo();
+  if(mode === 'SEL'){
+    to = Array.from(view.sel);
+    if(!to.length){ note('msgNote', false, 'Tick some users in the key list first.'); return; }
+  }else if(mode === 'ONE'){
+    to = [$('mOne').value];
+    if(!to[0]){ note('msgNote', false, 'Choose the user.'); return; }
+  }
+  const days = $('mDays').value;
+  const until = days === 'date' ? $('mUntil').value : isoPlus(parseInt(days, 10) - 1);
+  if(!until){ note('msgNote', false, 'Choose until when it shows.'); return; }
+  const who = to === 'ALL' ? 'EVERYONE' : (to.length === 1 ? nameOf(to[0]) : to.length + ' users');
+  if(!confirm('Send this message to ' + who + '?\n\nShows until ' + until +
+              ($('mImp').checked ? '\nImportant: also a banner on their screen.' : ''))) return;
+  const d = await call('admin_msg_send', {to, text, until,
+    title: $('mTitle').value.trim(), level: $('mImp').checked ? 'important' : 'info'});
+  if(!d.ok){ note('msgNote', false, d.message || 'Not sent.'); return; }
+  $('mText').value = ''; $('mTitle').value = ''; $('mImp').checked = false;
+  await loadMessages();
+  note('msgNote', true, d.message);
+}
+
+async function deleteMessage(id){
+  if(!confirm('Delete this message? It disappears from users\' bells within about an hour.')) return;
+  const d = await call('admin_msg_delete', {id});
+  await loadMessages();
+  note('msgNote', !!d.ok, d.message || (d.ok ? 'Deleted.' : 'Not deleted.'));
+}
+
+/* VALID UNTIL (28 Oct 2026). A date per key that replaces the bot's
+   45-day count - Azim extends or renews, the user does nothing. Blank =
+   the normal 45 days, exactly as before. The PC picks the date up on its
+   next live run. */
+function isoPlus(days){
+  const d = new Date(); d.setDate(d.getDate() + days);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+
+         String(d.getDate()).padStart(2,'0');
+}
+function validCell(r){
+  const u = r.validUntil || '';
+  const today = isoPlus(0);
+  const k = esc(r.key);
+  let shown;
+  if(!u){
+    shown = '<span class="muted">45 days</span>';
+  }else if(u < today){
+    shown = '<span class="pill off">ended '+esc(u)+'</span>';
+  }else{
+    const left = Math.round((new Date(u+'T00:00:00') - new Date(today+'T00:00:00'))/864e5) + 1;
+    shown = '<b>'+esc(u)+'</b> <span class="muted">('+left+' d)</span>';
+  }
+  return '<td style="white-space:nowrap">'+shown+
+    ' <button class="sm" onclick="setValid(\''+k+'\')" '+
+    'style="border:0;background:transparent;padding:2px 4px" '+
+    'title="Set or extend the end date for this key">date</button></td>';
+}
+
+async function setValid(key){
+  const row = (data.rows||[]).find(r => r.key === key) || {};
+  const now = row.validUntil || '';
+  const ans = prompt('End date for ' + key + (row.issued ? ' ('+row.issued+')' : '') + '\n\n'+
+    'Type a date as YYYY-MM-DD, or a number of days from today (e.g. 45, 90, 365).\n'+
+    'Leave EMPTY to go back to the normal 45-day rule.\n\n'+
+    'Now: ' + (now || 'normal 45 days'), now || isoPlus(45));
+  if(ans === null) return;
+  const t = ans.trim();
+  let until = '';
+  if(/^\d{1,4}$/.test(t)) until = isoPlus(parseInt(t,10));
+  else if(t) until = t;
+  await after(await call('admin_valid', {key, until}));
+}
+
+async function setValidAll(){
+  const ans = prompt('Give EVERY active key the same end date.\n\n'+
+    'Type a date as YYYY-MM-DD, or a number of days from today (e.g. 90).\n'+
+    'Leave EMPTY to put every active key back on the normal 45-day rule.',
+    isoPlus(90));
+  if(ans === null) return;
+  const t = ans.trim();
+  let until = '';
+  if(/^\d{1,4}$/.test(t)) until = isoPlus(parseInt(t,10));
+  else if(t) until = t;
+  if(!confirm((until ? 'Set every active key valid until ' + until
+                     : 'Put every active key back on 45 days') + '?')) return;
+  await after(await call('admin_valid', {all: true, until}));
 }
 
 function card(label, n){
@@ -576,9 +1027,11 @@ async function setMaster(to){
 
 async function after(d){
   if(!d.ok){ note('msg', false, d.message || 'That did not work.'); return; }
-  note('msg', true, d.message || 'Done.');
+  // Refresh FIRST, then say what happened. The refresh's own "Working..."
+  // used to overwrite the result and then stay on screen after every button.
   const fresh = await call('admin_list');
   if(fresh.ok) paint(fresh);
+  note('msg', true, d.message || 'Done.');
 }
 
 /* ======================================================== RELEASES =====
@@ -818,6 +1271,7 @@ if(cfg.url && cfg.pin){
       // page is for; releases load behind it, and a Sheet with no Release
       // tab yet simply paints "nothing published".
       loadReleases();
+      loadMessages();
     }
     else{
       // Key changed in the Sheet, or the deployment moved. Ask again rather
